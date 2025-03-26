@@ -4,12 +4,14 @@ import time
 import os
 import random
 import sys
+import math
 pygame.font.init()
 
 WINDOW_WIDTH = 500
 WINDOW_HEIGHT = 800
 GENERATION = 0
 GAME_MODE = "ai" #default game mode
+VISUALIZE_AI = False
 
 #loads all the bird images into a list
 BIRD_IMGS = [pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird1.png"))),pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird2.png"))),pygame.transform.scale2x(pygame.image.load(os.path.join("imgs", "bird3.png")))]
@@ -172,7 +174,77 @@ def draw_window(win, birds, pipes, base, score, generation):
     
     for bird in birds:
         bird.draw(win)
-    
+        if GAME_MODE == "ai" and VISUALIZE_AI and hasattr(bird, "decision"):
+
+            # --- Visualize the pipes being "seen" by the bird ---
+            # Find the nearest pipe (the first one whose right edge is ahead of the bird)
+            nearest_pipe = None
+            for pipe in pipes:
+                if pipe.x + pipe.PIPE_TOP.get_width() > bird.x:
+                    nearest_pipe = pipe
+                    break
+            if nearest_pipe is not None:
+                # Calculate the bird's center position
+                bird_center = (bird.x + bird.img.get_width() // 2, bird.y + bird.img.get_height() // 2)
+                # Define the key points in the pipe gap
+                top_gap = (nearest_pipe.x + nearest_pipe.PIPE_TOP.get_width() // 2, nearest_pipe.height)
+                bottom_gap = (nearest_pipe.x + nearest_pipe.PIPE_BOTTOM.get_width() // 2, nearest_pipe.bottom)
+                # Draw lines from the bird to the top (red) and bottom (green) of the gap
+                pygame.draw.line(win, (255, 0, 0), bird_center, top_gap, 2)
+                pygame.draw.line(win, (0, 255, 0), bird_center, bottom_gap, 2)
+            
+            # --- Visualize the AI decision ---
+            # Position the decision arrow just in front of the bird
+            start_x = bird.x + bird.img.get_width() + 5
+            start_y = bird.y + bird.img.get_height() // 2
+
+            # Treat decision values between 0.4 and 0.6 as "straight" (i.e. effective decision 0.5)
+            effective_decision = bird.decision
+            if 0.3 <= bird.decision <= 0.6:
+                effective_decision = 0.5
+
+            # Map decision to a vertical offset
+            scale_factor = 80  # Adjust to set maximum vertical deviation
+            offset = (effective_decision - 0.5) * -scale_factor  # negative: higher decision => upward
+            target_y = start_y + offset
+
+            arrow_length = 20
+            if effective_decision == 0.5:
+                # Draw horizontal arrow when going straight
+                end_x = start_x + arrow_length
+                end_y = start_y
+            else:
+                # Otherwise, arrow goes vertically to the computed target
+                end_x = start_x
+                end_y = target_y
+
+            # Draw the decision arrow line (yellow)
+            pygame.draw.line(win, (255, 255, 0), (start_x, start_y), (end_x, end_y), 3)
+
+            # Draw an arrow head based on arrow direction
+            if effective_decision == 0.5:
+                # Horizontal arrow head (pointing right)
+                pygame.draw.polygon(win, (255, 255, 0), [
+                    (end_x, end_y),
+                    (end_x - 5, end_y - 5),
+                    (end_x - 5, end_y + 5)
+                ])
+            else:
+                if end_y < start_y:
+                    # Arrow pointing upward
+                    pygame.draw.polygon(win, (255, 255, 0), [
+                        (end_x, end_y),
+                        (end_x - 5, end_y + 5),
+                        (end_x + 5, end_y + 5)
+                    ])
+                else:
+                    # Arrow pointing downward
+                    pygame.draw.polygon(win, (255, 255, 0), [
+                        (end_x, end_y),
+                        (end_x - 5, end_y - 5),
+                        (end_x + 5, end_y - 5)
+                    ])
+
     pygame.display.update()
 
 
@@ -197,7 +269,7 @@ def main(genomes,config):
     clock = pygame.time.Clock()
     run = True
     while run:
-        clock.tick(0)
+        clock.tick(30)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
@@ -218,6 +290,7 @@ def main(genomes,config):
             bird.move()
             ge[x].fitness += 0.1
             output = nets[x].activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
+            bird.decision = output[0]
 
             if output[0] > 0.5:
                 bird.jump()
@@ -336,11 +409,20 @@ if __name__ == "__main__":
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, "config-feedforward.txt")
 
-    if len(sys.argv) > 1 and sys.argv[1].lower() == "play":
-        GAME_MODE = "play"
-        play_game()
+    if len(sys.argv) > 1:
+        arg1 = sys.argv[1].lower()
+        if arg1 == "play":
+            GAME_MODE = "play"
+            play_game()
+        elif arg1 == "ai":
+            GAME_MODE = "ai"
+            # If a second argument "visualize" is passed, enable visualization
+            if len(sys.argv) > 2 and sys.argv[2].lower() == "-v":
+                VISUALIZE_AI = True
+            run(config_path)
     else:
+        # Default to AI mode without visualization
+        GAME_MODE = "ai"
         run(config_path)
-    #run(config_path)
 
 
