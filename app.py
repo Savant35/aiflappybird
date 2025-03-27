@@ -49,6 +49,7 @@ class Bird:
         self.x, self.y, self.height = x, y, y
         self.tilt = self.tick_count = self.vel = self.img_count = 0
         self.img = self.IMGS[0]
+        self.decision: float = 0
 
     #controls when the bird jumps or flaps to go up
     def jump(self):
@@ -418,6 +419,7 @@ def trained_game(config_path):
             abs(bird.y - pipes[pipe_ind].height),
             abs(bird.y - pipes[pipe_ind].bottom)
         ))
+        bird.decision = output[0]
 
         # If output is > 0.5, the bird jumps
         if output[0] > 0.5:
