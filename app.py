@@ -1,10 +1,9 @@
 import pygame
 import neat
-import time
 import os
 import random
 import sys
-import math
+import pickle
 pygame.font.init()
 
 WINDOW_WIDTH = 500
@@ -174,7 +173,7 @@ def draw_window(win, birds, pipes, base, score, generation):
     
     for bird in birds:
         bird.draw(win)
-        if GAME_MODE == "ai" and VISUALIZE_AI and hasattr(bird, "decision"):
+        if (GAME_MODE == "ai" or GAME_MODE == "trained") and VISUALIZE_AI and hasattr(bird, "decision"):
 
             # --- Visualize the pipes being "seen" by the bird ---
             # Find the nearest pipe (the first one whose right edge is ahead of the bird)
@@ -247,107 +246,74 @@ def draw_window(win, birds, pipes, base, score, generation):
 
     pygame.display.update()
 
-
-def main(genomes,config):
-    global GENERATION
-    GENERATION += 1
-    nets = []
-    ge = []
-    birds = [] 
-
-    for __, g in genomes:
-        net = neat.nn.FeedForwardNetwork.create(g, config)
-        nets.append(net)
-        birds.append(Bird(230,350))
-        g.fitness = 0
-        ge.append(g)
-
-    score = 0
-    base = Base(730)
-    pipes = [Pipe(700)]
-    win = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    clock = pygame.time.Clock()
-    run = True
-    while run:
-        clock.tick(30)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                run = False
-                pygame.quit()
-                quit()
-
-
-        pipe_ind = 0
-        if len(birds) > 0:
-             if len(pipes) > 1 and birds[0].x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
-                 pipe_ind = 1
-        else:
-            run = False
-            break
-
-
-        for x, bird in enumerate(birds):  # give each bird a fitness of 0.1 for each frame it stays alive
-            bird.move()
-            ge[x].fitness += 0.1
-            output = nets[x].activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
-            bird.decision = output[0]
-
-            if output[0] > 0.5:
-                bird.jump()
-
-
-        #bird.move()
-        
-        add_pipe = False
-        rem = []
-        for pipe in pipes:
-            if birds and not pipe.passed and pipe.x < birds[0].x:
-                pipe.passed = True
-                add_pipe = True
-            if pipe.x + pipe.PIPE_TOP.get_width() < 0:
-                rem.append(pipe)
-
-            pipe.move()
-
-        for i in reversed(range(len(birds))):
-            if any(pipe.collide(birds[i]) for pipe in pipes):
-                ge[i].fitness -= 1
-                birds.pop(i)
-                nets.pop(i)
-                ge.pop(i)
-
-        if add_pipe:
-            score += 1
-            for g in ge:
-                g.fitness += 5
-            pipes.append(Pipe(600))
-
-        for r in rem:
-            pipes.remove(r)
-
-        for x, bird in enumerate(birds):
-            if bird.y +bird.img.get_height()>= 730 or bird.y < 0:
-                birds.pop(x)
-                nets.pop(x)
-                ge.pop(x)
-
-        base.move()
-        draw_window(win, birds,pipes, base,score, GENERATION)
-
 def run(config_path):
     config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
                      config_path)
 
     p = neat.Population(config)
-
-    p.add_reporter(neat.StdOutReporter(True))
+    #p.add_reporter(neat.StdOutReporter(True))
     stats = neat.StatisticsReporter()
+    p.add_reporter(neat.StdOutReporter(True))
     p.add_reporter(stats)
+    winner = None
 
-    winnder = p.run(main,50) #how many generations i am going to run
 
-#    A standard version of Flappy Bird where the user can control the bird with the spacebar.
+
+    try:
+        winner = p.run(main, 50)
+    except KeyboardInterrupt:
+        print("Training interrupted.")
+    finally:
+        # Retrieve the best genome from each generation
+        best_list = stats.best_genomes(-1)
+
+        # Initialize best_all_time to None so it is always defined
+        best_all_time = None
+
+        
+# Decide which genome to save
+        chosen_to_save = None
+
+        if best_all_time is not None and winner is not None:
+            if best_all_time.fitness > winner.fitness:
+                chosen_to_save = best_all_time
+            else:
+                chosen_to_save = winner
+        elif best_all_time is not None:
+            chosen_to_save = best_all_time
+        else:
+            chosen_to_save = winner
+
+# Check if a saved genome already exists and only overwrite if the new one is better.
+        if os.path.exists("best_ai.pkl"):
+            with open("best_ai.pkl", "rb") as f:
+                saved_genome = pickle.load(f)
+            if saved_genome is not None and hasattr(saved_genome, "fitness"):
+                if chosen_to_save is not None and chosen_to_save.fitness > saved_genome.fitness:
+                    with open("best_ai.pkl", "wb") as f:
+                        pickle.dump(chosen_to_save, f)
+                    print(f"Saved new best genome with fitness {chosen_to_save.fitness:.2f} to best_ai.pkl")
+                else:
+                    print(f"Saved genome remains with fitness {saved_genome.fitness:.2f}; not overwriting.")
+            else:
+                # If for some reason the saved genome is None, save chosen_to_save.
+                if chosen_to_save is not None:
+                    with open("best_ai.pkl", "wb") as f:
+                        pickle.dump(chosen_to_save, f)
+                    print(f"Saved best genome with fitness {chosen_to_save.fitness:.2f} to best_ai.pkl")
+                else:
+                    print("No winner found; not saving any genome.")
+        else:
+            if chosen_to_save is not None:
+                with open("best_ai.pkl", "wb") as f:
+                    pickle.dump(chosen_to_save, f)
+                print(f"Saved best genome with fitness {chosen_to_save.fitness:.2f} to best_ai.pkl")
+            else:
+                print("No winner found; not saving any genome.")
+
+
+ #A standard version of Flappy Bird where the user can control the bird with the spacebar.
 def play_game():
     global HIGH_SCORE
     while True:
@@ -405,6 +371,192 @@ def play_game():
     #pygame.quit()
     #sys.exit()
 
+def trained_game(config_path):
+    import pickle
+
+    # Load the best AI genome from file
+    with open("best_ai.pkl", "rb") as f:
+        winner_genome = pickle.load(f)
+
+    # Create a NEAT config and network from the trained genome
+    config = neat.Config(
+        neat.DefaultGenome,
+        neat.DefaultReproduction,
+        neat.DefaultSpeciesSet,
+        neat.DefaultStagnation,
+        config_path
+    )
+    net = neat.nn.FeedForwardNetwork.create(winner_genome, config)
+
+    # Set up a single Bird, Base, and a Pipe
+    bird = Bird(230, 350)
+    base = Base(730)
+    pipes = [Pipe(700)]
+    win = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    clock = pygame.time.Clock()
+    score = 0
+    run = True
+
+    while run:
+        clock.tick(0)  # Control frame rate if desired
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                pygame.quit()
+                sys.exit()
+
+        bird.move()
+
+        # Decide which pipe to use for the inputs
+        pipe_ind = 0
+        if len(pipes) > 1 and bird.x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+            pipe_ind = 1
+
+        # Network output => single output neuron
+        output = net.activate((
+            bird.y,
+            abs(bird.y - pipes[pipe_ind].height),
+            abs(bird.y - pipes[pipe_ind].bottom)
+        ))
+
+        # If output is > 0.5, the bird jumps
+        if output[0] > 0.5:
+            bird.jump()
+
+        add_pipe = False
+        rem = []
+        for pipe in pipes:
+            pipe.move()
+
+            # If bird hits a pipe, end run
+            if pipe.collide(bird):
+                run = False
+
+            # Track if pipe is off screen
+            if pipe.x + pipe.PIPE_TOP.get_width() < 0:
+                rem.append(pipe)
+
+            # Once the bird passes the pipe, mark it for pipe creation
+            if not pipe.passed and pipe.x < bird.x:
+                pipe.passed = True
+                add_pipe = True
+
+        if add_pipe:
+            score += 1
+            pipes.append(Pipe(600))
+
+        for r in rem:
+            pipes.remove(r)
+
+        # If bird goes above the screen or below the base
+        if bird.y + bird.img.get_height() >= 730 or bird.y < 0:
+            run = False
+
+        base.move()
+        draw_window(win, [bird], pipes, base, score, 0)
+
+    pygame.quit()
+    sys.exit()
+
+
+def main(genomes,config):
+    global GENERATION
+    GENERATION += 1
+    nets = []
+    ge = []
+    birds = [] 
+
+    for __, g in genomes:
+        net = neat.nn.FeedForwardNetwork.create(g, config)
+        nets.append(net)
+        birds.append(Bird(230,350))
+        g.fitness = 0
+        ge.append(g)
+
+    score = 0
+    base = Base(730)
+    pipes = [Pipe(700)]
+    win = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    clock = pygame.time.Clock()
+    run = True
+    while run:
+        clock.tick(0)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                run = False
+                pygame.quit()
+                quit()
+
+
+        pipe_ind = 0
+        if len(birds) > 0:
+             if len(pipes) > 1 and birds[0].x > pipes[0].x + pipes[0].PIPE_TOP.get_width():
+                 pipe_ind = 1
+        else:
+            run = False
+            break
+
+
+        for x, bird in enumerate(birds):  # give each bird a fitness of 0.1 for each frame it stays alive
+            bird.move()
+            ge[x].fitness += 0.1
+            output = nets[x].activate((bird.y, abs(bird.y - pipes[pipe_ind].height), abs(bird.y - pipes[pipe_ind].bottom)))
+            bird.decision = output[0]
+
+            if output[0] > 0.5:
+                bird.jump()
+
+
+        #bird.move()
+        
+        add_pipe = False
+        rem = []
+        for pipe in pipes:
+            if birds and not pipe.passed and pipe.x < birds[0].x:
+                pipe.passed = True
+                add_pipe = True
+            if pipe.x + pipe.PIPE_TOP.get_width() < 0:
+                rem.append(pipe)
+
+            pipe.move()
+
+        #when looking for a champioon
+        for i in reversed(range(len(birds))):
+            if any(pipe.collide(birds[i]) for pipe in pipes):
+                ge[i].fitness -= 1
+                birds.pop(i)
+                nets.pop(i)
+                ge.pop(i)
+
+        
+
+        if add_pipe:
+            score += 1
+            for g in ge:
+                g.fitness += 5
+            pipes.append(Pipe(600))
+
+        for r in rem:
+            pipes.remove(r)
+
+        for x, bird in enumerate(birds):
+            if bird.y +bird.img.get_height()>= 730 or bird.y < 0:
+                birds.pop(x)
+                nets.pop(x)
+                ge.pop(x)
+
+        base.move()
+        draw_window(win, birds,pipes, base,score, GENERATION)
+
+#remove later
+        TARGET_SCORE = 400  # Set your desired target score here
+        best_fitness = max((g.fitness for g in ge), default=0)
+        if best_fitness >= TARGET_SCORE:
+            print(f"Target score reached: {best_fitness:.2f}. Ending generation early.")
+            run = False
+
+
+
 if __name__ == "__main__":
     local_dir = os.path.dirname(__file__)
     config_path = os.path.join(local_dir, "config-feedforward.txt")
@@ -416,12 +568,17 @@ if __name__ == "__main__":
             play_game()
         elif arg1 == "ai":
             GAME_MODE = "ai"
-            # If a second argument "visualize" is passed, enable visualization
             if len(sys.argv) > 2 and sys.argv[2].lower() == "-v":
                 VISUALIZE_AI = True
             run(config_path)
+        elif arg1 == "trained":
+            GAME_MODE = "trained"
+            if len(sys.argv) > 2 and sys.argv[2].lower() == "-v":
+                VISUALIZE_AI = True
+            trained_game(config_path)
+        else:
+            print("Usage: python3 app.py [play | ai [-v] | trained]")
     else:
-        # Default to AI mode without visualization
         GAME_MODE = "ai"
         run(config_path)
 
