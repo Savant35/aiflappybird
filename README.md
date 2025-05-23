@@ -76,8 +76,10 @@ Watch the trained AI play with visualization: `python3 app.py trained -v`
 <!-- DEMO -->
 ## Demo
 
-<img src="flappybird.gif" alt="Flappy Bird AI Demo" />
+<img src="flappybird.gif" alt="Flappy Bird AI Demo" height="512" />
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 <!-- LICENSE -->
 ## License
