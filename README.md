@@ -55,14 +55,13 @@ A Python-based Flappy Bird clone built with Pygame and NEAT-Python. Experiment w
 ### Installation
 
 ```sh
-https://github.com/Savant35/aiflappybird.git
+git clone https://github.com/Savant35/aiflappybird.git
 cd aiflappybird
 pip install pygame neat-python
 ```
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 <!-- USAGE EXAMPLES -->
-<!-- USAGE -->
-<!-- USAGE -->
+
 ## Usage
 
 Start the game in human-playable mode: `python3 app.py play`  
